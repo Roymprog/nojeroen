@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhoSpeaks - Audio Classifier</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: #e94560;
+        }
+        .subtitle {
+            color: #888;
+            margin-bottom: 2rem;
+        }
+        .container {
+            width: 100%;
+            max-width: 700px;
+        }
+
+        /* Upload section */
+        .upload-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            border: 2px dashed #333;
+            margin-bottom: 1.5rem;
+            transition: border-color 0.2s;
+        }
+        .upload-section.dragover {
+            border-color: #e94560;
+        }
+        .upload-section label {
+            display: inline-block;
+            padding: 0.75rem 2rem;
+            background: #e94560;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .upload-section label:hover {
+            background: #c73650;
+        }
+        .upload-section input[type="file"] {
+            display: none;
+        }
+        .upload-section p {
+            margin-top: 0.75rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .file-name {
+            color: #aaa;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        /* Player section */
+        .player-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            display: none;
+        }
+        .player-section.visible {
+            display: block;
+        }
+        audio {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+        .audio-info {
+            display: flex;
+            justify-content: space-between;
+            color: #888;
+            font-size: 0.85rem;
+        }
+
+        /* Prediction section */
+        .prediction-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: none;
+        }
+        .prediction-section.visible {
+            display: block;
+        }
+        .prediction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .prediction-header h2 {
+            font-size: 1.1rem;
+            color: #ccc;
+        }
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .status-connected {
+            background: #0a3d2a;
+            color: #4caf50;
+        }
+        .status-disconnected {
+            background: #3d0a0a;
+            color: #f44336;
+        }
+        .status-waiting {
+            background: #3d3a0a;
+            color: #ffc107;
+        }
+
+        /* Prediction display */
+        .prediction-display {
+            text-align: center;
+            padding: 1.5rem 0;
+        }
+        .prediction-label {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            transition: color 0.3s;
+        }
+        .prediction-label.jeroen {
+            color: #e94560;
+        }
+        .prediction-label.other {
+            color: #4caf50;
+        }
+        .prediction-label.unknown {
+            color: #666;
+        }
+        .confidence-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+        }
+
+        /* Confidence bar */
+        .confidence-bar-container {
+            width: 100%;
+            height: 24px;
+            background: #0f3460;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+        .confidence-bar {
+            height: 100%;
+            border-radius: 12px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+            min-width: 2%;
+        }
+        .confidence-bar.jeroen {
+            background: linear-gradient(90deg, #e94560, #c73650);
+        }
+        .confidence-bar.other {
+            background: linear-gradient(90deg, #4caf50, #388e3c);
+        }
+        .confidence-bar.unknown {
+            background: #444;
+        }
+        .confidence-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        /* Position info */
+        .position-info {
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        /* Insufficient audio message */
+        .insufficient-msg {
+            color: #ffc107;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+        .insufficient-msg.visible {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>WhoSpeaks</h1>
+    <p class="subtitle">Real-time speaker identification for JEROEN VAN INKEL</p>
+
+    <div class="container">
+        <!-- Upload -->
+        <div class="upload-section" id="uploadSection">
+            <label for="fileInput">Choose WAV File</label>
+            <input type="file" id="fileInput" accept=".wav,audio/wav">
+            <p>or drag and drop a WAV file here</p>
+            <div class="file-name" id="fileName"></div>
+        </div>
+
+        <!-- Player -->
+        <div class="player-section" id="playerSection">
+            <audio id="audioPlayer" controls></audio>
+            <div class="audio-info">
+                <span id="audioInfoDuration"></span>
+                <span id="audioInfoSampleRate"></span>
+            </div>
+        </div>
+
+        <!-- Predictions -->
+        <div class="prediction-section" id="predictionSection">
+            <div class="prediction-header">
+                <h2>Live Prediction</h2>
+                <span class="status-badge status-waiting" id="statusBadge">Waiting</span>
+            </div>
+            <div class="prediction-display">
+                <div class="prediction-label unknown" id="predictionLabel">--</div>
+                <div class="confidence-value" id="confidenceValue">--%</div>
+                <div class="confidence-bar-container">
+                    <div class="confidence-bar unknown" id="confidenceBar" style="width: 0%"></div>
+                </div>
+                <div class="confidence-labels">
+                    <span>0%</span>
+                    <span>50%</span>
+                    <span>100%</span>
+                </div>
+                <div class="insufficient-msg" id="insufficientMsg">
+                    Waiting for enough audio (first 2 seconds)...
+                </div>
+                <div class="position-info" id="positionInfo"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById("fileInput");
+        const uploadSection = document.getElementById("uploadSection");
+        const playerSection = document.getElementById("playerSection");
+        const predictionSection = document.getElementById("predictionSection");
+        const audioPlayer = document.getElementById("audioPlayer");
+        const predictionLabel = document.getElementById("predictionLabel");
+        const confidenceValue = document.getElementById("confidenceValue");
+        const confidenceBar = document.getElementById("confidenceBar");
+        const statusBadge = document.getElementById("statusBadge");
+        const insufficientMsg = document.getElementById("insufficientMsg");
+        const positionInfo = document.getElementById("positionInfo");
+        const fileName = document.getElementById("fileName");
+        const audioInfoDuration = document.getElementById("audioInfoDuration");
+        const audioInfoSampleRate = document.getElementById("audioInfoSampleRate");
+
+        let ws = null;
+        let positionInterval = null;
+        let currentFileId = null;
+
+        // Drag and drop
+        uploadSection.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            uploadSection.classList.add("dragover");
+        });
+        uploadSection.addEventListener("dragleave", () => {
+            uploadSection.classList.remove("dragover");
+        });
+        uploadSection.addEventListener("drop", (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove("dragover");
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        fileInput.addEventListener("change", () => {
+            if (fileInput.files[0]) handleFile(fileInput.files[0]);
+        });
+
+        async function handleFile(file) {
+            if (!file.name.toLowerCase().endsWith(".wav")) {
+                alert("Please select a WAV file.");
+                return;
+            }
+
+            fileName.textContent = file.name;
+
+            // Close existing WebSocket
+            closeWebSocket();
+
+            // Upload
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const resp = await fetch("/upload", { method: "POST", body: formData });
+                if (!resp.ok) throw new Error("Upload failed");
+                const data = await resp.json();
+
+                currentFileId = data.file_id;
+                audioInfoDuration.textContent = "Duration: " + formatTime(data.duration);
+                audioInfoSampleRate.textContent = "Sample rate: " + data.sample_rate + " Hz";
+
+                // Set audio source
+                audioPlayer.src = "/audio/" + data.file_id;
+
+                // Show sections
+                playerSection.classList.add("visible");
+                predictionSection.classList.add("visible");
+
+                // Reset prediction display
+                resetPredictionDisplay();
+
+                // Set up audio event listeners
+                setupAudioListeners();
+            } catch (err) {
+                alert("Error uploading file: " + err.message);
+            }
+        }
+
+        function setupAudioListeners() {
+            audioPlayer.onplay = () => {
+                openWebSocket();
+                startPositionUpdates();
+            };
+
+            audioPlayer.onpause = () => {
+                stopPositionUpdates();
+            };
+
+            audioPlayer.onended = () => {
+                stopPositionUpdates();
+            };
+
+            audioPlayer.onseeked = () => {
+                if (!audioPlayer.paused) {
+                    sendPosition();
+                }
+            };
+        }
+
+        function openWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+
+            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const url = protocol + "//" + window.location.host + "/ws/predict/" + currentFileId;
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                statusBadge.textContent = "Connected";
+                statusBadge.className = "status-badge status-connected";
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updatePrediction(data);
+            };
+
+            ws.onclose = () => {
+                statusBadge.textContent = "Disconnected";
+                statusBadge.className = "status-badge status-disconnected";
+            };
+
+            ws.onerror = () => {
+                statusBadge.textContent = "Error";
+                statusBadge.className = "status-badge status-disconnected";
+            };
+        }
+
+        function closeWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            stopPositionUpdates();
+        }
+
+        function startPositionUpdates() {
+            stopPositionUpdates();
+            positionInterval = setInterval(sendPosition, 500);
+            // Send immediately
+            sendPosition();
+        }
+
+        function stopPositionUpdates() {
+            if (positionInterval) {
+                clearInterval(positionInterval);
+                positionInterval = null;
+            }
+        }
+
+        function sendPosition() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ position: audioPlayer.currentTime }));
+            }
+        }
+
+        function updatePrediction(data) {
+            if (data.status === "insufficient_audio") {
+                insufficientMsg.classList.add("visible");
+                predictionLabel.textContent = "--";
+                predictionLabel.className = "prediction-label unknown";
+                confidenceValue.textContent = "--%";
+                confidenceBar.style.width = "0%";
+                confidenceBar.className = "confidence-bar unknown";
+            } else {
+                insufficientMsg.classList.remove("visible");
+
+                const isJeroen = data.label === "JEROEN_VAN_INKEL";
+                const pct = Math.round(data.confidence * 100);
+                const cls = isJeroen ? "jeroen" : "other";
+
+                predictionLabel.textContent = isJeroen ? "JEROEN VAN INKEL" : "OTHER";
+                predictionLabel.className = "prediction-label " + cls;
+
+                confidenceValue.textContent = pct + "%";
+
+                confidenceBar.style.width = pct + "%";
+                confidenceBar.className = "confidence-bar " + cls;
+            }
+
+            positionInfo.textContent = "Position: " + formatTime(data.position);
+        }
+
+        function resetPredictionDisplay() {
+            predictionLabel.textContent = "--";
+            predictionLabel.className = "prediction-label unknown";
+            confidenceValue.textContent = "--%";
+            confidenceBar.style.width = "0%";
+            confidenceBar.className = "confidence-bar unknown";
+            insufficientMsg.classList.remove("visible");
+            positionInfo.textContent = "";
+            statusBadge.textContent = "Waiting";
+            statusBadge.className = "status-badge status-waiting";
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return m + ":" + (s < 10 ? "0" : "") + s;
+        }
+    </script>
+</body>
+</html>
