@@ -142,19 +142,11 @@ async def websocket_predict(websocket: WebSocket, file_id: str):
             data = await websocket.receive_json()
             position = data.get("position", 0.0)
 
-            # Quantize to 0.5s boundaries
+            # Quantize to 0.5s boundaries.
+            # Per RFC-007, segments shorter than the 2s window are padded
+            # with silence by feature_extraction, so all positions return
+            # a real prediction (no insufficient_audio short-circuit).
             quantized = round(position * 2) / 2
-
-            if quantized < 2.0:
-                await websocket.send_json(
-                    {
-                        "position": position,
-                        "label": "OTHER",
-                        "confidence": 0.0,
-                        "status": "insufficient_audio",
-                    }
-                )
-                continue
 
             # Check cache
             if quantized in cache:
