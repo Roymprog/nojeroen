@@ -105,6 +105,7 @@ class TestWebSocketPrediction:
             assert "position" in data
 
     def test_websocket_insufficient_audio(self, client):
+        """Per RFC-007, short windows are padded with silence, so all positions return valid predictions."""
         wav = make_wav_bytes(5.0)
         upload_resp = client.post(
             "/upload", files={"file": ("test.wav", wav, "audio/wav")}
@@ -112,11 +113,14 @@ class TestWebSocketPrediction:
         file_id = upload_resp.json()["file_id"]
 
         with client.websocket_connect(f"/ws/predict/{file_id}") as ws:
+            # Position < 2.0 is now valid (padded on the left per RFC-007)
             ws.send_json({"position": 1.0})
             data = ws.receive_json()
-            assert data["status"] == "insufficient_audio"
-            assert data["label"] == "OTHER"
-            assert data["confidence"] == 0.0
+            assert "label" in data
+            assert data["label"] in ("JEROEN_VAN_INKEL", "OTHER")
+            assert "confidence" in data
+            assert 0.0 <= data["confidence"] <= 1.0
+            assert data["position"] == 1.0
 
     def test_websocket_multiple_positions(self, client):
         wav = make_wav_bytes(10.0)
