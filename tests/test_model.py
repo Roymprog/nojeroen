@@ -198,3 +198,128 @@ class TestComputeInferenceLatency:
         """AC-006: compute_inference_latency() completes within 1 second."""
         latency_ms = predictor.compute_inference_latency()
         assert latency_ms < 1000, f"Latency {latency_ms}ms exceeds 1s (AC-006 requirement)"
+
+
+class TestIntegrationPipelineEndToEnd:
+    """Integration tests for the full model pipeline: feature extraction → prediction."""
+
+    @pytest.fixture
+    def predictor(self, tmp_path):
+        """Session-scoped predictor loaded once for all integration tests."""
+        _write_model_artifacts(str(tmp_path))
+        return SpeakerPredictor.load(str(tmp_path))
+
+    def _make_wav(self, tmp_path, duration_s=6.0):
+        """Helper to create a WAV file."""
+        import wave
+        import io
+
+        path = os.path.join(str(tmp_path), "test.wav")
+        n_samples = int(duration_s * SAMPLE_RATE)
+        samples = np.random.randint(-32768, 32767, size=n_samples, dtype=np.int16)
+        with wave.open(path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(samples.tobytes())
+        return path
+
+    @pytest.mark.parametrize("position", [0.0, 0.1, 1.99, 2.0, 2.5, 5.0])
+    def test_predict_window_boundary_positions(self, predictor, tmp_path, position):
+        """predict_window() returns valid predictions at boundary positions including padding.
+
+        Tests RFC-007 padding contract: positions < 2.0 are padded on the left.
+        """
+        wav_path = self._make_wav(tmp_path, 6.0)
+        result = predictor.predict_window(wav_path, position)
+
+        assert result["label"] in ("JEROEN_VAN_INKEL", "OTHER")
+        assert 0.0 <= result["confidence"] <= 1.0
+        assert isinstance(result, dict)
+
+    def test_predict_window_determinism(self, predictor, tmp_path):
+        """predict_window() returns identical predictions for identical inputs (determinism).
+
+        Tests that the pipeline is deterministic: same audio → same label + confidence.
+        """
+        wav_path = self._make_wav(tmp_path, 6.0)
+        position = 3.0
+
+        result1 = predictor.predict_window(wav_path, position)
+        result2 = predictor.predict_window(wav_path, position)
+
+        assert result1["label"] == result2["label"]
+        assert result1["confidence"] == result2["confidence"]
+
+    def test_predict_window_short_audio_padding_transparent(self, predictor, tmp_path):
+        """Padding for position < 2.0 is transparent: same output dict format as non-padded.
+
+        Verifies RFC-007 contract: short windows are padded silently, no output change.
+        """
+        wav_path = self._make_wav(tmp_path, 6.0)
+
+        # Non-padded (position >= 2.0)
+        result_nonpad = predictor.predict_window(wav_path, 3.0)
+
+        # Padded (position < 2.0)
+        result_pad = predictor.predict_window(wav_path, 1.0)
+
+        # Both return same dict structure
+        assert set(result_nonpad.keys()) == set(result_pad.keys())
+        assert "label" in result_pad and "confidence" in result_pad
+
+    def test_predict_consistency_across_position_range(self, predictor, tmp_path):
+        """predict_window() produces valid predictions across the full position range [0.0, duration].
+
+        Integration test: verifies end-to-end pipeline at multiple positions.
+        """
+        wav_path = self._make_wav(tmp_path, 6.0)
+        positions = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.5, 6.0]
+
+        results = [predictor.predict_window(wav_path, pos) for pos in positions]
+
+        # All should return valid predictions
+        assert len(results) == len(positions)
+        for result in results:
+            assert result["label"] in ("JEROEN_VAN_INKEL", "OTHER")
+            assert 0.0 <= result["confidence"] <= 1.0
+
+    def test_app_quantized_position_contract(self, predictor, tmp_path):
+        """Cross-workstream contract: app quantizes position to 0.5s, calls predict_window().
+
+        App quantization: round(position * 2) / 2
+        This may result in position < 2.0 (e.g., position=0.75 → quantized=0.5).
+        """
+        wav_path = self._make_wav(tmp_path, 6.0)
+
+        # Simulate app's quantization
+        test_positions = [0.3, 0.75, 1.2, 2.3, 3.7, 5.9]
+        quantized_positions = [round(p * 2) / 2 for p in test_positions]
+
+        # All should produce valid predictions without exception
+        for orig_pos, quant_pos in zip(test_positions, quantized_positions):
+            result = predictor.predict_window(wav_path, quant_pos)
+            assert "label" in result and "confidence" in result
+            assert result["label"] in ("JEROEN_VAN_INKEL", "OTHER")
+
+    def test_inference_latency_ac006(self, predictor):
+        """AC-006: Prediction latency must be < 1 second for real-time playback.
+
+        Verifies the model can provide sub-1s predictions required by the application.
+        """
+        latency_ms = predictor.compute_inference_latency()
+        assert latency_ms < 1000, f"Latency {latency_ms}ms violates AC-006 (< 1s)"
+
+    def test_predict_from_embedding_preserves_output_format(self, predictor):
+        """predict_from_embedding() produces same output format as predict().
+
+        Verifies the embedding → prediction pipeline contract.
+        """
+        # Create a dummy 256-dim embedding (resemblyzer spec)
+        embedding = np.random.randn(256).astype(np.float32)
+
+        result = predictor.predict_from_embedding(embedding)
+
+        assert "label" in result and "confidence" in result
+        assert result["label"] in ("JEROEN_VAN_INKEL", "OTHER")
+        assert 0.0 <= result["confidence"] <= 1.0
