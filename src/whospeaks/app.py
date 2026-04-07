@@ -65,6 +65,17 @@ class _MockPredictor:
 # --- Routes ---
 
 
+@app.on_event("startup")
+async def _startup_load_predictor() -> None:
+    """Eagerly load the SpeakerPredictor on app startup (AC-002).
+
+    Falls back to the mock predictor if the persisted model file is
+    unavailable, so the app still boots in dev environments without a
+    trained model on disk.
+    """
+    _get_predictor()
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     index_path = STATIC_DIR / "index.html"
@@ -140,7 +151,18 @@ async def websocket_predict(websocket: WebSocket, file_id: str):
     try:
         while True:
             data = await websocket.receive_json()
-            position = data.get("position", 0.0)
+            position = float(data.get("position", 0.0))
+
+            # Reject positions outside the file. Negative or beyond-EOF
+            # positions cannot be padded into a meaningful 2s window.
+            if position < 0.0 or position > file_info["duration"]:
+                await websocket.send_json(
+                    {
+                        "position": position,
+                        "error": "position out of range",
+                    }
+                )
+                continue
 
             # Quantize to 0.5s boundaries.
             # Per RFC-007, segments shorter than the 2s window are padded
