@@ -1,0 +1,10 @@
+{
+  "feature_type": "resemblyzer_ge2e",
+  "embedding_dim": 256,
+  "window_size_s": 2.0,
+  "stride_s": 1.0,
+  "sample_rate": 16000,
+  "threshold": 0.77,
+  "resemblyzer_version": "0.1.4",
+  "scale_pos_weight": 2.3551
+}

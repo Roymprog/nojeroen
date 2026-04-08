@@ -1,5 +1,6 @@
 """FastAPI application for WhoSpeaks audio classifier."""
 
+import logging
 import math
 import os
 import tempfile
@@ -39,8 +40,8 @@ def _get_predictor():
 
         _predictor = SpeakerPredictor.load()
         return _predictor
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning("Failed to load SpeakerPredictor, falling back to mock: %s", e)
 
     # Mock predictor for frontend development
     _predictor = _MockPredictor()
@@ -84,7 +85,8 @@ async def root():
 
 @app.get("/status")
 async def status():
-    return {"status": "ok", "model_loaded": _predictor is not None}
+    predictor_type = "mock" if isinstance(_predictor, _MockPredictor) else "real"
+    return {"status": "ok", "model_loaded": _predictor is not None, "predictor_type": predictor_type}
 
 
 @app.post("/upload")

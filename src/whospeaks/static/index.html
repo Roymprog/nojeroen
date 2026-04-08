@@ -195,16 +195,6 @@
             color: #666;
         }
 
-        /* Insufficient audio message */
-        .insufficient-msg {
-            color: #ffc107;
-            font-size: 0.85rem;
-            margin-top: 0.5rem;
-            display: none;
-        }
-        .insufficient-msg.visible {
-            display: block;
-        }
     </style>
 </head>
 <body>
@@ -246,9 +236,6 @@
                     <span>50%</span>
                     <span>100%</span>
                 </div>
-                <div class="insufficient-msg" id="insufficientMsg">
-                    Waiting for enough audio (first 2 seconds)...
-                </div>
                 <div class="position-info" id="positionInfo"></div>
             </div>
         </div>
@@ -264,7 +251,6 @@
         const confidenceValue = document.getElementById("confidenceValue");
         const confidenceBar = document.getElementById("confidenceBar");
         const statusBadge = document.getElementById("statusBadge");
-        const insufficientMsg = document.getElementById("insufficientMsg");
         const positionInfo = document.getElementById("positionInfo");
         const fileName = document.getElementById("fileName");
         const audioInfoDuration = document.getElementById("audioInfoDuration");
@@ -412,28 +398,17 @@
         }
 
         function updatePrediction(data) {
-            if (data.status === "insufficient_audio") {
-                insufficientMsg.classList.add("visible");
-                predictionLabel.textContent = "--";
-                predictionLabel.className = "prediction-label unknown";
-                confidenceValue.textContent = "--%";
-                confidenceBar.style.width = "0%";
-                confidenceBar.className = "confidence-bar unknown";
-            } else {
-                insufficientMsg.classList.remove("visible");
+            const isJeroen = data.label === "JEROEN_VAN_INKEL";
+            const pct = Math.round(data.confidence * 100);
+            const cls = isJeroen ? "jeroen" : "other";
 
-                const isJeroen = data.label === "JEROEN_VAN_INKEL";
-                const pct = Math.round(data.confidence * 100);
-                const cls = isJeroen ? "jeroen" : "other";
+            predictionLabel.textContent = isJeroen ? "JEROEN VAN INKEL" : "OTHER";
+            predictionLabel.className = "prediction-label " + cls;
 
-                predictionLabel.textContent = isJeroen ? "JEROEN VAN INKEL" : "OTHER";
-                predictionLabel.className = "prediction-label " + cls;
+            confidenceValue.textContent = pct + "%";
 
-                confidenceValue.textContent = pct + "%";
-
-                confidenceBar.style.width = pct + "%";
-                confidenceBar.className = "confidence-bar " + cls;
-            }
+            confidenceBar.style.width = pct + "%";
+            confidenceBar.className = "confidence-bar " + cls;
 
             positionInfo.textContent = "Position: " + formatTime(data.position);
         }
@@ -444,7 +419,6 @@
             confidenceValue.textContent = "--%";
             confidenceBar.style.width = "0%";
             confidenceBar.className = "confidence-bar unknown";
-            insufficientMsg.classList.remove("visible");
             positionInfo.textContent = "";
             statusBadge.textContent = "Waiting";
             statusBadge.className = "status-badge status-waiting";

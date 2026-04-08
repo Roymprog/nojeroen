@@ -7,12 +7,19 @@ import wave
 import pytest
 from fastapi.testclient import TestClient
 
-from whospeaks.app import app
+import whospeaks.app as app_module
+from whospeaks.app import app, _MockPredictor
 
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    # Force mock predictor for app tests — model quality is tested in test_model.py.
+    # Using the real LightGBM model in TestClient causes segfaults on macOS due to
+    # OpenMP thread-safety issues in the WebSocket test environment.
+    original = app_module._predictor
+    app_module._predictor = _MockPredictor()
+    yield TestClient(app)
+    app_module._predictor = original
 
 
 def make_wav_bytes(duration_s: float = 3.0, sample_rate: int = 22050) -> bytes:
@@ -165,6 +172,13 @@ class TestStatusEndpoint:
         data = resp.json()
         assert data["status"] == "ok"
         assert "model_loaded" in data
+
+    def test_status_includes_predictor_type(self, client):
+        resp = client.get("/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "predictor_type" in data
+        assert data["predictor_type"] in ("real", "mock")
 
 
 class TestPredictEndpoint:
