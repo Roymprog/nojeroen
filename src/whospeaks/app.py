@@ -135,10 +135,14 @@ async def predict(file: UploadFile, predictor: PredictorDep):
 
     try:
         audio, sr = librosa.load(str(tmp_path), sr=None)
-        result = predictor.predict(audio, sr)
-        return {"label": result["label"], "confidence": result["confidence"]}
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Could not decode audio: {exc}")
     finally:
         tmp_path.unlink(missing_ok=True)
+
+    result = predictor.predict(audio, sr)
+    return {"label": result["label"], "confidence": result["confidence"]}
 
 
 @app.websocket("/ws/predict/{file_id}")

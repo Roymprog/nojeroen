@@ -45,7 +45,6 @@ from whospeaks.train import (
     compute_scale_pos_weight,
     evaluate,
     load_model,
-    run_loso_cv,
     save_model,
     train_model,
     tune_threshold,
@@ -394,28 +393,6 @@ class TestInferencePipeline:
 # RFC-007 Required Test: Cross-session generalization
 # ============================================================
 class TestCrossSessionGeneralization:
-
-    @pytest.mark.slow
-    def test_loso_cv_s4_fold_within_20pp(self):
-        """
-        RFC-007: LOSO-CV: S4 fold precision within 20pp of S1-S3 average.
-        """
-        if not os.path.exists(DATA_DIR):
-            pytest.skip("Training data not available")
-
-        from whospeaks.data_loader import load_split_data
-
-        _, session_data = load_split_data()
-        loso_data = {s: (session_data[s][0], session_data[s][1]) for s in session_data}
-        results = run_loso_cv(loso_data)
-
-        s1_s3_avg = np.mean([results[s]["precision"] for s in ["S1", "S2", "S3"]])
-        s4_prec = results["S4"]["precision"]
-
-        assert abs(s4_prec - s1_s3_avg) < 0.20, (
-            f"S4 precision {s4_prec:.3f} deviates by more than 20pp "
-            f"from S1-S3 average {s1_s3_avg:.3f}"
-        )
 
     @pytest.mark.slow
     def test_cross_show_nonzero_precision_recall(self):

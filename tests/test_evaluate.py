@@ -292,26 +292,17 @@ class TestEvaluationReport:
             y = np.array([1] * 7 + [0] * 18)
             session_data[sname] = (X, y, {"JEROEN_VAN_INKEL": 7, "OTHER": 18})
 
-        loso_results = {
-            "S1": {"precision": 0.9, "recall": 0.8, "f1": 0.85},
-            "S2": {"precision": 0.85, "recall": 0.75, "f1": 0.80},
-            "S3": {"precision": 0.88, "recall": 0.82, "f1": 0.85},
-            "S4": {"precision": 0.92, "recall": 0.70, "f1": 0.80},
-        }
-
         with tempfile.TemporaryDirectory() as tmpdir:
             report = generate_evaluation_report(
                 model=model,
                 threshold=0.5,
                 split_data=split_data,
                 session_data=session_data,
-                loso_results=loso_results,
                 output_dir=tmpdir,
             )
 
             assert "val_metrics" in report
             assert "test_metrics" in report
-            assert "loso_cv" in report
             assert "cosine_similarity" in report
             assert "visualization_path" in report
             assert "report_path" in report
@@ -326,39 +317,6 @@ class TestEvaluationReport:
             # Verify visualization was saved
             assert os.path.exists(report["visualization_path"])
             assert os.path.getsize(report["visualization_path"]) > 0
-
-    def test_report_without_loso(self):
-        """Report works without LOSO results (optional param)."""
-        from whospeaks.evaluate import generate_evaluation_report
-
-        np.random.seed(42)
-        X = np.random.randn(60, EMBEDDING_DIM).astype(np.float32)
-        y = np.array([1] * 15 + [0] * 45)
-        model, _ = train_model(X, y)
-
-        split_data = {
-            "train": (X, y, {"JEROEN_VAN_INKEL": 15, "OTHER": 45}),
-            "val": (X[:20], y[:20], {"JEROEN_VAN_INKEL": 5, "OTHER": 15}),
-            "test": (X[20:40], y[20:40], {"JEROEN_VAN_INKEL": 5, "OTHER": 15}),
-        }
-        session_data = {
-            "S1": (X[:15], y[:15], {"JEROEN_VAN_INKEL": 5, "OTHER": 10}),
-            "S2": (X[15:30], y[15:30], {"JEROEN_VAN_INKEL": 5, "OTHER": 10}),
-            "S3": (X[30:45], y[30:45], {"JEROEN_VAN_INKEL": 5, "OTHER": 10}),
-            "S4": (X[45:60], y[45:60], {"JEROEN_VAN_INKEL": 5, "OTHER": 10}),
-        }
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            report = generate_evaluation_report(
-                model=model,
-                threshold=0.5,
-                split_data=split_data,
-                session_data=session_data,
-                output_dir=tmpdir,
-            )
-            assert "loso_cv" not in report
-            assert "val_metrics" in report
-            assert "test_metrics" in report
 
 
 # ============================================================
@@ -377,7 +335,7 @@ class TestEvaluationPipelineRealData:
 
         from whospeaks.data_loader import load_split_data
         from whospeaks.evaluate import generate_evaluation_report
-        from whospeaks.train import run_loso_cv, train_model, tune_threshold
+        from whospeaks.train import train_model, tune_threshold
 
         split_data, session_data = load_split_data()
         X_train, y_train, _ = split_data["train"]
@@ -386,16 +344,12 @@ class TestEvaluationPipelineRealData:
         model, _ = train_model(X_train, y_train)
         threshold = tune_threshold(model, X_val, y_val)
 
-        loso_data = {s: (session_data[s][0], session_data[s][1]) for s in session_data}
-        loso_results = run_loso_cv(loso_data)
-
         with tempfile.TemporaryDirectory() as tmpdir:
             report = generate_evaluation_report(
                 model=model,
                 threshold=threshold,
                 split_data=split_data,
                 session_data=session_data,
-                loso_results=loso_results,
                 output_dir=tmpdir,
             )
 

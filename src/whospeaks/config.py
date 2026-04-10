@@ -1,11 +1,15 @@
 import os
+from pathlib import Path
 
-# Data paths
+# Project root: src/whospeaks/config.py → ../../.. = project root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Data paths — env vars override; defaults are relative to the project root
 DATA_DIR = os.environ.get(
-    "WHOSPEAKS_DATA_DIR", "/workspaces/whospeaks_agent/data/labeled"
+    "WHOSPEAKS_DATA_DIR", str(_PROJECT_ROOT / "data" / "labeled")
 )
 MODEL_DIR = os.environ.get(
-    "WHOSPEAKS_MODEL_DIR", "/workspaces/whospeaks_agent/models"
+    "WHOSPEAKS_MODEL_DIR", str(_PROJECT_ROOT / "models")
 )
 
 # Session definitions

@@ -16,6 +16,13 @@ dependencies = [
     "matplotlib>=3.7",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: marks tests as slow (training pipeline on real data); run with -m slow",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
