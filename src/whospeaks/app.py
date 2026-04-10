@@ -3,17 +3,26 @@
 import logging
 import math
 import os
+
+# Prevent OpenMP/MKL thread pool deadlock when PyTorch (resemblyzer) and
+# LightGBM are both loaded in the same process.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 import tempfile
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 
 import librosa
+import lightgbm  # noqa: F401 — must load LightGBM native code before torch to avoid OpenMP runtime conflict on macOS
 import numpy as np
-from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-app = FastAPI(title="WhoSpeaks")
+from whospeaks.model import SpeakerPredictor
 
 # Temp storage for uploaded files
 UPLOAD_DIR = Path(tempfile.mkdtemp(prefix="whospeaks_"))
@@ -25,33 +34,10 @@ prediction_cache: dict[str, dict[float, dict]] = {}
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-# --- Model loading ---
-# Try to load real SpeakerPredictor; fall back to mock
-_predictor = None
-
-
-def _get_predictor():
-    global _predictor
-    if _predictor is not None:
-        return _predictor
-
-    try:
-        from whospeaks.model import SpeakerPredictor
-
-        _predictor = SpeakerPredictor.load()
-        return _predictor
-    except Exception as e:
-        logging.warning("Failed to load SpeakerPredictor, falling back to mock: %s", e)
-
-    # Mock predictor for frontend development
-    _predictor = _MockPredictor()
-    return _predictor
-
-
 class _MockPredictor:
     """Returns mock predictions for frontend development."""
 
-    def predict_window(self, file_path: str, position: float) -> dict:
+    def predict_window(self, _file_path: str, position: float) -> dict:
         # Deterministic mock based on position for consistency
         sin_val = math.sin(position * 0.5)
         confidence = 0.3 + 0.4 * abs(sin_val)
@@ -63,18 +49,37 @@ class _MockPredictor:
         return {"label": "OTHER", "confidence": 0.5}
 
 
-# --- Routes ---
+_predictor: "_MockPredictor | SpeakerPredictor | None" = None
 
 
-@app.on_event("startup")
-async def _startup_load_predictor() -> None:
-    """Eagerly load the SpeakerPredictor on app startup (AC-002).
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load the SpeakerPredictor once on startup.
 
     Falls back to the mock predictor if the persisted model file is
     unavailable, so the app still boots in dev environments without a
     trained model on disk.
     """
-    _get_predictor()
+    global _predictor
+    try:
+        _predictor = SpeakerPredictor.load()
+    except Exception as e:
+        logging.warning("Failed to load SpeakerPredictor, falling back to mock: %s", e)
+        _predictor = _MockPredictor()
+    yield
+
+
+app = FastAPI(title="WhoSpeaks", lifespan=lifespan)
+
+
+def _get_predictor():
+    return _predictor
+
+
+PredictorDep = Annotated[_MockPredictor, Depends(_get_predictor)]
+
+
+# --- Routes ---
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -84,9 +89,9 @@ async def root():
 
 
 @app.get("/status")
-async def status():
-    predictor_type = "mock" if isinstance(_predictor, _MockPredictor) else "real"
-    return {"status": "ok", "model_loaded": _predictor is not None, "predictor_type": predictor_type}
+async def status(predictor: PredictorDep):
+    predictor_type = "mock" if isinstance(predictor, _MockPredictor) else "real"
+    return {"status": "ok", "model_loaded": True, "predictor_type": predictor_type}
 
 
 @app.post("/upload")
@@ -120,7 +125,7 @@ async def get_audio(file_id: str):
 
 
 @app.post("/predict")
-async def predict(file: UploadFile):
+async def predict(file: UploadFile, predictor: PredictorDep):
     """Accept a WAV audio chunk and return a prediction. AC-007."""
     content = await file.read()
 
@@ -129,7 +134,6 @@ async def predict(file: UploadFile):
     tmp_path.write_bytes(content)
 
     try:
-        predictor = _get_predictor()
         audio, sr = librosa.load(str(tmp_path), sr=None)
         result = predictor.predict(audio, sr)
         return {"label": result["label"], "confidence": result["confidence"]}
@@ -138,7 +142,7 @@ async def predict(file: UploadFile):
 
 
 @app.websocket("/ws/predict/{file_id}")
-async def websocket_predict(websocket: WebSocket, file_id: str):
+async def websocket_predict(websocket: WebSocket, file_id: str, predictor: PredictorDep):
     await websocket.accept()
 
     if file_id not in uploaded_files:
@@ -148,7 +152,6 @@ async def websocket_predict(websocket: WebSocket, file_id: str):
 
     file_info = uploaded_files[file_id]
     cache = prediction_cache.setdefault(file_id, {})
-    predictor = _get_predictor()
 
     try:
         while True:
@@ -176,23 +179,34 @@ async def websocket_predict(websocket: WebSocket, file_id: str):
             if quantized in cache:
                 result = cache[quantized]
             else:
-                result = predictor.predict_window(
-                    file_info["path"], quantized
-                )
+                try:
+                    result = predictor.predict_window(
+                        file_info["path"], quantized
+                    )
+                except Exception as exc:
+                    logging.warning("predict_window error at %.2f: %s", quantized, exc)
+                    await websocket.send_json({"position": position, "error": str(exc)})
+                    continue
                 cache[quantized] = result
 
+            confidence = result["confidence"]
+            if not math.isfinite(confidence):
+                confidence = 0.0
             await websocket.send_json(
                 {
                     "position": position,
                     "label": result["label"],
-                    "confidence": result["confidence"],
+                    "confidence": confidence,
                 }
             )
     except WebSocketDisconnect:
         pass
+    except Exception as exc:
+        logging.warning("WebSocket handler error: %s", exc, exc_info=True)
 
 
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
