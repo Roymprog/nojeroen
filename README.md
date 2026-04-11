@@ -23,7 +23,7 @@ A local web application that identifies when a specific speaker (JEROEN_VAN_INKE
 ## Quick Start
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.10+
 - `uv` package manager (https://docs.astral.sh/uv/)
 - WAV audio files (any sample rate, app resamples to 16kHz internally)
 
@@ -182,47 +182,6 @@ uv run pytest tests/test_app.py -v
    - Display binary label (JEROEN_VAN_INKEL / OTHER)
    - Show confidence as numeric (0-100%) and visual bar
 
----
-
-## Acceptance Criteria (AC)
-
-| AC | Requirement | Status |
-|----|-----------|--------|
-| AC-001 | Precision >= 95% on held-out test (S4) | ⏳ Pending training run |
-| AC-002 | Model saved to disk, loads on startup | ⏳ Pending training run |
-| AC-003 | Web app starts, HTTP 200 on root | ✅ Verified |
-| AC-004 | Upload any WAV file | ✅ Verified |
-| AC-005 | Live predictions during playback | ✅ Verified |
-| AC-006 | Latency < 1 second | ✅ Verified |
-| AC-007 | Label + confidence displayed | ✅ Verified |
-| AC-008 | Train/test split by session | ✅ Verified |
-| AC-009 | Threshold tuned for precision >= 95% | ⏳ Pending training run |
-| AC-010 | Confidence bar visual indicator | ✅ Verified |
-
----
-
-## Architecture
-
-### Model Class: SpeakerPredictor
-
-```python
-from whospeaks.model import SpeakerPredictor
-
-# Load from disk
-predictor = SpeakerPredictor.load("models/")
-
-# Predict from raw audio (any duration)
-result = predictor.predict(audio, sr=16000)
-# Returns: {"label": "JEROEN_VAN_INKEL" | "OTHER", "confidence": 0.0-1.0}
-
-# Predict for a sliding window (2s window ending at position)
-result = predictor.predict_window("path/to/audio.wav", position=3.5)
-# Returns: same dict as predict()
-# Handles padding for position < 2.0 per RFC-007
-
-# Measure inference latency
-latency_ms = predictor.compute_inference_latency()  # Should be < 1000ms
-```
 
 ### API Endpoints
 
@@ -251,51 +210,6 @@ latency_ms = predictor.compute_inference_latency()  # Should be < 1000ms
 }
 ```
 
----
-
-## RFC-007: Implementation Details
-
-This project implements RFC-007 (Speaker Embeddings Feature Approach):
-
-- **Feature Type**: Resemblyzer GE2E speaker embeddings (256-dim)
-- **Window Size**: 2.0 seconds
-- **Stride**: 1.0 second (overlapping windows)
-- **Padding**: For segments < 2s, pad on the left with silence to reach 2s
-- **Resampling**: Force 16kHz internally
-- **Class Imbalance**: Use `scale_pos_weight` in LightGBM based on window counts
-- **Evaluation**: LOSO-CV (all 4 folds) with separate S4 cross-show test
-
-See `.dev-team-artifacts/audio-classifier-whospeaks/rfcs/007-speaker-embeddings-feature-approach.md` for full details.
-
----
-
-## Troubleshooting
-
-### Model Not Found on Startup
-```
-ERROR: Trying to load model from models/model.joblib — file not found!
-App using MockPredictor (predictions = sin(position * 0.5))
-```
-**Solution**: Run the training pipeline first (`train.py`).
-
-### Predictions Not Updating During Playback
-- Check browser console for WebSocket errors
-- Verify `position` messages are being sent every ~500ms
-- Confirm backend is returning `{label, confidence}` dicts
-
-### Audio File Upload Fails
-- Ensure file is a valid WAV
-- Check file is <= available disk space in temp directory
-- If sample rate != 16kHz, `librosa.load` will resample (expected)
-
-### Low Precision on Test Set
-- Check data quality (labeling accuracy)
-- Verify train/test split by session (no leakage)
-- Check threshold tuning log; target >= 95% may be unreachable with this feature set
-- Per RFC-007, LOSO-CV on S4 fold is the primary signal
-
----
-
 ## Development
 
 ### Adding Tests
@@ -314,29 +228,6 @@ uv run mypy src/ --no-error-summary  # Type checking (optional)
 
 ---
 
-## References
-
-- **Requirements**: `.dev-team-artifacts/audio-classifier-whospeaks/requirements/requirements.md`
-- **RFC-007**: `.dev-team-artifacts/audio-classifier-whospeaks/rfcs/007-speaker-embeddings-feature-approach.md`
-- **Resemblyzer**: https://github.com/resemble-ai/Resemblyzer (GE2E speaker embeddings)
-- **LightGBM**: https://lightgbm.readthedocs.io/ (fast gradient boosting classifier)
-
----
-
 ## License
 
 This project is provided as-is for research and development purposes.
-
----
-
-## Support
-
-For issues or questions:
-1. Check the troubleshooting section above
-2. Review test files for usage examples
-3. Check FastAPI docs: https://fastapi.tiangolo.com/
-4. Check Resemblyzer docs: https://github.com/resemble-ai/Resemblyzer
-
----
-
-**Status**: Phase 2 complete (code + tests). Phase 3 review in progress. Awaiting model training results for AC-001 verification.
