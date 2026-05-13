@@ -1,0 +1,24 @@
+name: WhoSpeaks
+version: 0.1.0
+slug: whospeaks
+description: Real-time Jeroen-van-Inkel detection on Sonos radio
+arch:
+  - aarch64
+  - amd64
+init: false
+hassio_api: false
+homeassistant_api: true
+services:
+  - mqtt:need
+map:
+  - share
+schema:
+  sonos_entity_id: str
+  stations:
+    "[str]": url
+  log_level: list(DEBUG|INFO|WARNING|ERROR)?
+options:
+  sonos_entity_id: media_player.sonos_woonkamer
+  stations:
+    "NPO Radio 2": https://icecast.omroep.nl/radio2-bb-mp3
+  log_level: INFO
