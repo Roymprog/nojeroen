@@ -231,13 +231,6 @@ async def amain() -> int:
         sorted(options.stations.keys()),
     )
 
-    try:
-        predictor = await asyncio.to_thread(SpeakerPredictor.load, options.model_dir)
-    except Exception as exc:
-        logger.error("failed to load model from %s: %s", options.model_dir, exc)
-        return 1
-    logger.info("model loaded from %s", options.model_dir)
-
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -251,9 +244,26 @@ async def amain() -> int:
             return 1
         logger.info("connecting to MQTT %s:%s", broker.host, broker.port)
 
+        # Connect to MQTT first so HA discovers the entities. Availability
+        # starts as `offline`; we flip it to `online` only after the model
+        # loads. A missing/invalid model therefore surfaces as `unavailable`
+        # in HA via the retained LWT, per docs/home-assistant-addon.md.
         async with MqttPublisher(broker) as mqtt:
+            try:
+                predictor = await asyncio.to_thread(
+                    SpeakerPredictor.load, options.model_dir,
+                )
+            except Exception as exc:
+                logger.error(
+                    "failed to load model from %s: %s; sensor will stay unavailable",
+                    options.model_dir, exc,
+                )
+                return 1
+            logger.info("model loaded from %s", options.model_dir)
+
             orchestrator = Orchestrator(options, predictor, mqtt)
             await orchestrator.start()
+            await mqtt.set_online()
 
             ha_task = asyncio.create_task(
                 _stream_sonos_with_reconnect(

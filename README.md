@@ -93,6 +93,80 @@ uv run pytest tests/test_app.py -v
 
 ---
 
+## Home Assistant deployment
+
+The repo also ships a Home Assistant add-on that taps a Sonos radio stream live and publishes the classifier's verdict to MQTT, where HA picks it up via auto-discovery. Full design notes are in [`docs/home-assistant-addon.md`](docs/home-assistant-addon.md); the steps below are the operator path.
+
+### Prerequisites on the HA host
+
+- Home Assistant OS or Supervised (so the **Add-on Store** is available — Container/Core installs cannot install add-ons).
+- The **Mosquitto broker** add-on installed and running, plus the **MQTT** integration added in *Settings → Devices & Services*.
+- The **Sonos** integration added, with the target `media_player.*` entity you want to tap.
+- The **Samba share** add-on (or any way to drop files into `/share/`) — used to deliver the trained model.
+
+### 1. Add this repo as an add-on repository
+
+1. In HA, go to **Settings → Add-ons → Add-on Store**.
+2. Top-right menu (⋮) → **Repositories**.
+3. Paste the HTTPS URL of this Git repo and click **Add**, then **Close**.
+4. The store reloads; scroll to the new **WhoSpeaks** section and open the **WhoSpeaks** add-on tile.
+
+### 2. Install and configure
+
+1. Click **Install** on the add-on page. First build takes ~5–10 minutes on Yellow (it compiles the Python deps for ARM).
+2. Open the **Configuration** tab and set:
+
+   ```yaml
+   sonos_entity_id: media_player.sonos_woonkamer   # your Sonos entity
+   stations:
+     "NPO Radio 2": https://icecast.omroep.nl/radio2-bb-mp3
+     "BNR Nieuwsradio": https://stream.bnr.nl/bnr_mp3_128_03
+   log_level: INFO
+   ```
+
+   `stations` keys must match the `media_title` Sonos reports for that station exactly. Check *Developer Tools → States → media_player.sonos_…* while the station is playing if you're unsure.
+
+3. **Save**.
+
+### 3. Drop in the trained model
+
+The add-on does **not** ship a model — it loads one from `/share/whospeaks/` on the HA host. Until the model is present, the entities exist but stay `unavailable`.
+
+1. Train locally with the workflow above (`run_training_pipeline()`); this produces `models/model.joblib` and `models/config.json`.
+2. Mount the host's `share` folder via the Samba add-on (or `scp` for HA Supervised).
+3. Create `share/whospeaks/` and copy both files into it. The final layout on the host:
+
+   ```
+   /share/whospeaks/
+   ├── model.joblib
+   └── config.json
+   ```
+
+### 4. Start the add-on
+
+1. On the add-on page, **Start**.
+2. Open the **Log** tab. A healthy boot logs `model loaded from /share/whospeaks` and `connecting to MQTT …`.
+3. In HA, two new entities appear (MQTT discovery):
+   - `sensor.whospeaks_current_speaker` — state is one of `JEROEN_VAN_INKEL` / `OTHER` / `idle` / `unavailable`, with attributes `confidence`, `station`, `station_url`, `last_classified_at`, `raw_label`.
+   - `binary_sensor.whospeaks_jeroen_present` — `on` while the sensor state is `JEROEN_VAN_INKEL`.
+
+Enable **Watchdog** and **Start on boot** on the add-on page once you've confirmed it works.
+
+### 5. Shadow-rollout first
+
+Per the spec's accepted risks, **do not write automations against `binary_sensor.whospeaks_jeroen_present` for the first week of running**. Watch the History graph of `confidence` and `raw_label` while the configured stations play, look for systematic false positives, and only then wire up automations. If precision looks bad, retrain locally (see [`docs/home-assistant-addon.md`](docs/home-assistant-addon.md) §"Accepted risks" for the MP3 round-trip retrain path) and copy the new artifacts back to `/share/whospeaks/`.
+
+### Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| Entities never appear in HA | MQTT integration not added, or Mosquitto add-on not running. |
+| Entities show `unavailable` permanently | `/share/whospeaks/model.joblib` or `config.json` missing/corrupt — check add-on log for `failed to load model`. |
+| Sensor stuck on `idle` while Sonos is playing | `media_title` in HA doesn't match any key under `stations` — copy the exact title from *Developer Tools → States*. |
+| Frequent reconnects, log shows `ffmpeg: …` warnings | The station's HTTPS endpoint is throttling or 404-ing — verify the URL in a browser. |
+
+---
+
 ## Project Structure
 
 ```

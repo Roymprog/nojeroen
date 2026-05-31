@@ -85,7 +85,11 @@ class MqttPublisher:
         )
         await self._client.__aenter__()
         await self._publish_discovery()
-        await self._client.publish(TOPIC_AVAILABILITY, "online", qos=1, retain=True)
+        # Start in `offline` so the entity stays `unavailable` in HA until we
+        # confirm we're fully ready (model loaded, orchestrator running). If
+        # startup fails between here and `set_online`, the retained `offline`
+        # keeps the sensor `unavailable` without any explicit error path.
+        await self._client.publish(TOPIC_AVAILABILITY, "offline", qos=1, retain=True)
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -96,6 +100,12 @@ class MqttPublisher:
             logger.debug("could not publish offline on shutdown", exc_info=True)
         await self._client.__aexit__(exc_type, exc, tb)
         self._client = None
+
+    async def set_online(self) -> None:
+        """Mark the entity available. Call once startup is done and we're ready
+        to publish real states."""
+        assert self._client is not None
+        await self._client.publish(TOPIC_AVAILABILITY, "online", qos=1, retain=True)
 
     async def _publish_discovery(self) -> None:
         assert self._client is not None
