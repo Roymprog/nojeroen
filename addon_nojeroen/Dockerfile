@@ -12,14 +12,14 @@ RUN apt-get update \
 WORKDIR /app
 
 # Install Python deps first for a cacheable layer.
-COPY addon_nojeroen/whospeaks/requirements.txt /app/requirements.txt
+COPY addon_nojeroen/requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
 # Copy the source tree (both whospeaks core and whospeaks_addon).
 COPY src/ /app/src/
 ENV PYTHONPATH=/app/src
 
-COPY addon_nojeroen/whospeaks/run.sh /run.sh
+COPY addon_nojeroen/run.sh /run.sh
 RUN chmod +x /run.sh
 
 CMD ["/run.sh"]
