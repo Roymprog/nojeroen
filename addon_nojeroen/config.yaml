@@ -1,6 +1,6 @@
 name: WhoSpeaks
 image: "docker.io/royvs/nojeroen"
-version: 0.0.1
+version: 0.0.2
 slug: whospeaks
 description: Real-time Jeroen-van-Inkel detection on Sonos radio
 arch:
@@ -15,7 +15,7 @@ map:
 schema:
   sonos_entity_id: str
   stations:
-    "[str]": url
+    str: url
   log_level: list(DEBUG|INFO|WARNING|ERROR)?
 options:
   sonos_entity_id: media_player.sonos_woonkamer

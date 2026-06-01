@@ -22,6 +22,10 @@ RUN pip install -r /app/requirements.txt
 COPY src/ /app/src/
 ENV PYTHONPATH=/app/src
 
+# Bake the trained model into the image.
+COPY models/ /app/models/
+ENV WHOSPEAKS_MODEL_DIR=/app/models
+
 COPY addon_nojeroen/run.sh /run.sh
 RUN chmod +x /run.sh
 
