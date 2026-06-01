@@ -6,12 +6,15 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg libsndfile1 \
+ && apt-get install -y --no-install-recommends ffmpeg libsndfile1 gcc libc6-dev \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python deps first for a cacheable layer.
+# Install CPU-only PyTorch first (avoids ~5 GB of NVIDIA CUDA packages).
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining Python deps.
 COPY addon_nojeroen/requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
