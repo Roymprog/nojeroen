@@ -27,14 +27,21 @@ class Options:
         if not isinstance(sonos_entity_id, str) or not sonos_entity_id:
             raise ValueError("sonos_entity_id missing or empty")
 
-        stations = raw.get("stations")
-        if not isinstance(stations, dict) or not stations:
+        stations_raw = raw.get("stations")
+        if not isinstance(stations_raw, list) or not stations_raw:
             raise ValueError("stations missing or empty")
-        for title, url in stations.items():
-            if not isinstance(title, str) or not isinstance(url, str):
-                raise ValueError(f"stations[{title!r}] must map str → str, got {url!r}")
+        stations: dict[str, str] = {}
+        for entry in stations_raw:
+            if not isinstance(entry, str) or "|" not in entry:
+                raise ValueError(f"stations entry must be 'Name|URL', got {entry!r}")
+            title, url = entry.split("|", 1)
+            title = title.strip()
+            url = url.strip()
+            if not title or not url:
+                raise ValueError(f"stations entry has empty name or URL: {entry!r}")
             if not url.startswith(("http://", "https://")):
                 raise ValueError(f"stations[{title!r}] is not an http(s) URL: {url!r}")
+            stations[title] = url
 
         log_level = raw.get("log_level", "INFO")
         if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:

@@ -19,7 +19,7 @@ def test_load_minimal_valid(tmp_path, monkeypatch):
         tmp_path,
         {
             "sonos_entity_id": "media_player.sonos",
-            "stations": {"NPO Radio 2": "https://icecast.omroep.nl/radio2-bb-mp3"},
+            "stations": ["NPO Radio 2|https://icecast.omroep.nl/radio2-bb-mp3"],
         },
     )
     opts = Options.load(path)
@@ -35,7 +35,7 @@ def test_load_respects_model_dir_env(tmp_path, monkeypatch):
         tmp_path,
         {
             "sonos_entity_id": "media_player.sonos",
-            "stations": {"BNR": "https://stream.bnr.nl/bnr_mp3_128_03"},
+            "stations": ["BNR|https://stream.bnr.nl/bnr_mp3_128_03"],
         },
     )
     opts = Options.load(path)
@@ -43,13 +43,13 @@ def test_load_respects_model_dir_env(tmp_path, monkeypatch):
 
 
 def test_rejects_missing_entity(tmp_path):
-    path = _write(tmp_path, {"stations": {"X": "https://x"}})
+    path = _write(tmp_path, {"stations": ["X|https://x"]})
     with pytest.raises(ValueError, match="sonos_entity_id"):
         Options.load(path)
 
 
 def test_rejects_empty_stations(tmp_path):
-    path = _write(tmp_path, {"sonos_entity_id": "media_player.x", "stations": {}})
+    path = _write(tmp_path, {"sonos_entity_id": "media_player.x", "stations": []})
     with pytest.raises(ValueError, match="stations"):
         Options.load(path)
 
@@ -57,7 +57,7 @@ def test_rejects_empty_stations(tmp_path):
 def test_rejects_non_http_url(tmp_path):
     path = _write(
         tmp_path,
-        {"sonos_entity_id": "media_player.x", "stations": {"X": "ftp://no"}},
+        {"sonos_entity_id": "media_player.x", "stations": ["X|ftp://no"]},
     )
     with pytest.raises(ValueError, match="http"):
         Options.load(path)
@@ -68,7 +68,7 @@ def test_rejects_unknown_log_level(tmp_path):
         tmp_path,
         {
             "sonos_entity_id": "media_player.x",
-            "stations": {"X": "https://x"},
+            "stations": ["X|https://x"],
             "log_level": "TRACE",
         },
     )
