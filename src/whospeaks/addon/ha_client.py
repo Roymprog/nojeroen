@@ -23,7 +23,7 @@ class SonosState:
     """Subset of HA state we care about for the tapper."""
 
     state: str            # "playing", "paused", "idle", "off", ...
-    media_title: str | None
+    media_channel: str | None
     media_content_id: str | None
 
 
@@ -33,7 +33,7 @@ def parse_sonos_state(new_state: dict | None) -> SonosState | None:
     attrs = new_state.get("attributes") or {}
     return SonosState(
         state=new_state.get("state", "unknown"),
-        media_title=attrs.get("media_title"),
+        media_channel=attrs.get("media_channel"),
         media_content_id=attrs.get("media_content_id"),
     )
 

@@ -12,7 +12,7 @@ Target host: **Home Assistant Yellow** (CM4-class hardware, 4 cores, 4–8 GB RA
 
 - Expose `sensor.whospeaks_current_speaker` and `binary_sensor.whospeaks_jeroen_present` to Home Assistant.
 - Update automatically based on whatever Sonos is playing, with no per-session user action.
-- Support multiple radio stations via a user-configured `media_title` → HTTPS URL table.
+- Support multiple radio stations via a user-configured `media_channel` → HTTPS URL table.
 - Be debugable from inside HA (logs + history graphs) without ssh-ing into anything.
 
 ## Non-goals
@@ -51,7 +51,7 @@ The add-on is the only moving part this project ships. HA, Mosquitto, and the So
 |---|---|
 | State | `JEROEN_VAN_INKEL` \| `OTHER` \| `idle` \| `unavailable` |
 | `confidence` | float in [0, 1] — model's confidence in the **current** label (per `SpeakerPredictor.predict`: `prob` if positive, `1 - prob` if negative). Updates every cycle. |
-| `station` | string — `media_title` reported by Sonos for the currently tapped station, or `null` when `idle`. |
+| `station` | string — `media_channel` reported by Sonos for the currently tapped station, or `null` when `idle`. |
 | `station_url` | string — resolved HTTPS URL being tapped, or `null` when `idle`. |
 | `last_classified_at` | ISO-8601 timestamp of the most recent classification. |
 | `raw_label` | string — most recent **pre-hysteresis** classification. Useful for debugging "why is the sensor still `OTHER`". Updates every cycle. |
@@ -70,7 +70,7 @@ States: `JEROEN_VAN_INKEL`, `OTHER`, `idle`, `unavailable`.
 
 | Trigger | New state |
 |---|---|
-| Sonos state → `playing` and `media_title` ∈ station table | enter classifier; start in `OTHER`; hysteresis counters = 0 |
+| Sonos state → `playing` and `media_channel` ∈ station table | enter classifier; start in `OTHER`; hysteresis counters = 0 |
 | Sonos state → `paused`, `idle`, `off` | `idle` |
 | Sonos plays a station **not** in the station table | `idle` (same code path as paused; deliberately not a distinct state) |
 | Station change (e.g. NPO R2 → BNR) | **Hard reset**: close stream, drop buffer, counters = 0, state → `idle` for one cycle, then start fresh from `OTHER` |
@@ -91,7 +91,7 @@ Asymmetric — harder to enter, easier to leave — compounding with the model's
 1. Add-on boots, loads `model.joblib` + `config.json` from `/share/whospeaks/`. If either is missing or invalid, publish `unavailable` on the LWT topic and exit/retry — sensor shows `unavailable` in HA.
 2. Add-on opens a WebSocket to `http://supervisor/core/websocket` using the `SUPERVISOR_TOKEN` env var. Subscribes to `state_changed` events filtered to the configured `media_player.*` entity.
 3. On Sonos state event:
-   - If `playing` and `media_title` ∈ `stations` config: resolve to HTTPS URL, spawn ffmpeg subprocess, start tapper loop.
+  - If `playing` and `media_channel` ∈ `stations` config: resolve to HTTPS URL, spawn ffmpeg subprocess, start tapper loop.
    - Otherwise: tear down any running tapper, publish `idle`.
 4. Tapper loop (one per active stream):
    - Read raw 16 kHz mono PCM from ffmpeg's stdout into a 2-second rolling buffer.
@@ -109,7 +109,7 @@ Minimal. Three keys.
 
 ```yaml
 sonos_entity_id: media_player.sonos_woonkamer  # required
-stations:                                       # required, dict of media_title -> URL
+stations:                                       # required, dict of media_channel -> URL
   "NPO Radio 2": "https://icecast.omroep.nl/radio2-bb-mp3"
   "BNR Nieuwsradio": "https://stream.bnr.nl/bnr_mp3_128_03"
 log_level: INFO                                 # optional; default INFO

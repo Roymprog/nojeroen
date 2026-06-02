@@ -81,7 +81,7 @@ class Orchestrator:
         await self._stop_tapper()
 
     async def handle_sonos(self, sonos: SonosState) -> None:
-        title = sonos.media_title
+        title = sonos.media_channel
         is_tappable = (sonos.state == "playing" and title in self._options.stations)
 
         if not is_tappable:
